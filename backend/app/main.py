@@ -21,8 +21,16 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'meditrack.db'}")
+if DATABASE_URL.startswith("postgres://"):
+    # Some hosts give postgres:// URLs, which SQLAlchemy does not accept.
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
 
 engine = create_engine(
     DATABASE_URL,
@@ -80,7 +88,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="MediTrack API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
