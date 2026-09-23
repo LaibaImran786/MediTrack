@@ -1,0 +1,17 @@
+{
+  "name": "MediTrack",
+  "short_name": "MediTrack",
+  "description": "Medication management and adherence tracking",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f4f0",
+  "theme_color": "#7f3f98",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
