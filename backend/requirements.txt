@@ -7,4 +7,4 @@ PyJWT>=2.9
 bcrypt>=4.1
 requests>=2.32
 psycopg2-binary>=2.9
-email-validatoremail-validator
+email-validator
