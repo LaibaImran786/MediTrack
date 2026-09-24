@@ -510,76 +510,43 @@ This is an extraction aid, not medical advice. A human must verify all extracted
         }]
     }
 
-    # Gemini 3.6 Flash is the default production model. If Google returns
-    # a temporary 503 for the configured model, retry once with the stable
-    # Gemini 3.5 Flash model instead of exposing the transient provider error.
-    # models_to_try = [GEMINI_MODEL]
-    # if GEMINI_MODEL != "gemini-3.6-flash":
-    #     models_to_try.append("gemini-3.6-flash")
-    # if "gemini-3.5-flash" not in models_to_try:
-    #     models_to_try.append("gemini-3.5-flash")
-   
+    # Try the configured model first, then fall back to other Flash models.
     models_to_try = [GEMINI_MODEL]
+    for fallback_model in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+        if fallback_model not in models_to_try:
+            models_to_try.append(fallback_model)
 
-    for fallback_model in ["gemini-2.5-flash"]:
-      if fallback_model not in models_to_try:
-        models_to_try.append(fallback_model)
-
-        last_error = None
-        analysis = None
-
+    analysis = None
+    last_error = None
     for model in models_to_try:
         response = None
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
         try:
             response = requests.post(
                 endpoint,
-                headers={
-                    "x-goog-api-key": GEMINI_API_KEY,
-                    "Content-Type": "application/json",
-                },
+                headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
                 json=payload,
                 timeout=90,
             )
-
-            if response.status_code == 503:
-                last_error = f"Gemini temporarily unavailable (503) for model {model}."
-                continue
-
             response.raise_for_status()
-
             data = response.json()
-
             text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-            cleaned = (
-                text
-                .replace("```json", "")
-                .replace("```", "")
-                .strip()
-            )
-
+            cleaned = text.replace("```json", "").replace("```", "").strip()
             analysis = json.loads(cleaned)
-
-            # Gemini succeeded
             break
-
-        except (
-            requests.RequestException,
-            KeyError,
-            IndexError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as exc:
+        except Exception as exc:
             last_error = f"{model}: {exc}"
-            continue
+            if response is not None:
+                last_error += f" | {response.text[:300]}"
+            # Keep trying other models for temporary or model-not-found errors.
+            # Stop on 400/401/403 (bad key or bad request): another model won't help.
+            if response is not None and response.status_code not in (404, 429, 500, 502, 503, 504):
+                break
 
-    # Gemini failed with every model
     if analysis is None:
         raise HTTPException(
             status_code=502,
-            detail=f"Gemini analysis failed after model fallback: {last_error or 'Unknown Gemini error.'}",
+            detail=f"Gemini analysis failed: {last_error or 'Unknown Gemini error.'}",
         )
 
     session.add(Notification(
@@ -588,7 +555,6 @@ This is an extraction aid, not medical advice. A human must verify all extracted
         body="Gemini finished extracting medication information. Please verify it before saving.",
         kind="ai",
     ))
-
     session.commit()
 
     return {
