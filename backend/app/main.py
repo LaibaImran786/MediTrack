@@ -25,7 +25,7 @@ if DATABASE_URL.startswith("postgres://"):
     # Some hosts give postgres:// URLs, which SQLAlchemy does not accept.
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 CORS_ORIGINS = [
     o.strip()
     for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
@@ -513,11 +513,17 @@ This is an extraction aid, not medical advice. A human must verify all extracted
     # Gemini 3.6 Flash is the default production model. If Google returns
     # a temporary 503 for the configured model, retry once with the stable
     # Gemini 3.5 Flash model instead of exposing the transient provider error.
+    # models_to_try = [GEMINI_MODEL]
+    # if GEMINI_MODEL != "gemini-3.6-flash":
+    #     models_to_try.append("gemini-3.6-flash")
+    # if "gemini-3.5-flash" not in models_to_try:
+    #     models_to_try.append("gemini-3.5-flash")
+   
     models_to_try = [GEMINI_MODEL]
-    if GEMINI_MODEL != "gemini-3.6-flash":
-        models_to_try.append("gemini-3.6-flash")
-    if "gemini-3.5-flash" not in models_to_try:
-        models_to_try.append("gemini-3.5-flash")
+
+    for fallback_model in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+      if fallback_model not in models_to_try:
+        models_to_try.append(fallback_model)
 
     last_error = None
     for model in models_to_try:
