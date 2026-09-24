@@ -517,12 +517,12 @@ This is an extraction aid, not medical advice. A human must verify all extracted
 
     # Try the configured model first, then fall back to other Flash models.
     models_to_try = [GEMINI_MODEL]
-    for fallback_model in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+    for fallback_model in ["gemini-3.6-flash"]:
         if fallback_model not in models_to_try:
             models_to_try.append(fallback_model)
 
-    analysis = None
     last_error = None
+    analysis = None
     for model in models_to_try:
         response = None
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
