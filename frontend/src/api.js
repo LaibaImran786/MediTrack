@@ -9,10 +9,13 @@ async function request(path, options = {}) {
   }
 
   let res
-  try {
+    try {
     res = await fetch(`${API}${path}`, { ...options, headers })
-  } catch {
-    throw new Error('Cannot connect to the backend. Start FastAPI on port 8000.')
+  } catch (error) {
+    console.error('API connection error:', error)
+    throw new Error(
+      `Cannot connect to backend: ${error.message || 'Network error'}`
+    )
   }
 
   const data = await res.json().catch(() => ({}))
