@@ -536,7 +536,11 @@ A human must verify all extracted medication details."""
     }
 
     # Use Gemini 3.6 Flash
-    models_to_try = ["gemini-3.6-flash"]
+    models_to_try = [
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+]
 
     analysis = None
     last_error = None
