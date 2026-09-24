@@ -521,12 +521,12 @@ This is an extraction aid, not medical advice. A human must verify all extracted
    
     models_to_try = [GEMINI_MODEL]
 
-    for fallback_model in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+    for fallback_model in ["gemini-2.5-flash"]:
       if fallback_model not in models_to_try:
         models_to_try.append(fallback_model)
 
         last_error = None
-    analysis = None
+        analysis = None
 
     for model in models_to_try:
         response = None
