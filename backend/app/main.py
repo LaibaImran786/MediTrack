@@ -458,7 +458,6 @@ def read_all_notifications(user: User = Depends(current_user), session: Session 
     session.commit()
     return {"ok": True}
 
-
 @app.post("/api/prescription/upload")
 async def prescription_upload(
     file: UploadFile = File(...),
@@ -536,82 +535,100 @@ A human must verify all extracted medication details."""
         },
     }
 
-    # Try the configured model first, then fallback models.
-    models_to_try = [GEMINI_MODEL]
-
-    for fallback_model in [
-        "gemini-3.6-flash",
-    ]:
-        if fallback_model not in models_to_try:
-            models_to_try.append(fallback_model)
+    # Use Gemini 3.6 Flash
+    models_to_try = ["gemini-3.6-flash"]
 
     analysis = None
     last_error = None
 
+    # Try Gemini up to 3 times if it temporarily returns HTTP 503
     for model in models_to_try:
         url = (
-            f"https://generativelanguage.googleapis.com/"
-            f"v1beta/models/{model}:generateContent"
-            f"?key={GEMINI_API_KEY}"
+            f"https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{model}:generateContent?key={GEMINI_API_KEY}"
         )
 
-        try:
-            response = requests.post(
-                url,
-                json=payload,
-                timeout=60,
-            )
-
-            if response.status_code != 200:
-                last_error = (
-                    f"Gemini returned HTTP {response.status_code}: "
-                    f"{response.text[:500]}"
-                )
-                continue
-
-            result = response.json()
-
-            candidates = result.get("candidates", [])
-
-            if not candidates:
-                last_error = "Gemini returned no candidates."
-                continue
-
-            text = (
-                candidates[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "")
-                .strip()
-            )
-
-            if not text:
-                last_error = "Gemini returned an empty response."
-                continue
-
-            # Remove markdown JSON fences if Gemini returns them.
-            if text.startswith("```"):
-                text = text.replace("```json", "", 1)
-                text = text.replace("```", "")
-                text = text.strip()
-
+        for attempt in range(3):
             try:
-                analysis = json.loads(text)
-            except json.JSONDecodeError:
-                last_error = "Gemini returned invalid JSON."
-                continue
+                response = requests.post(
+                    url,
+                    json=payload,
+                    timeout=60,
+                )
 
+                # Gemini temporarily unavailable
+                if response.status_code == 503:
+                    if attempt < 2:
+                        time.sleep(3)
+                        continue
+
+                    last_error = (
+                        f"Gemini returned HTTP 503: {response.text}"
+                    )
+                    break
+
+                # Other API errors
+                if response.status_code != 200:
+                    last_error = (
+                        f"Gemini returned HTTP {response.status_code}: "
+                        f"{response.text}"
+                    )
+                    break
+
+                data = response.json()
+
+                candidates = data.get("candidates", [])
+
+                if not candidates:
+                    last_error = "Gemini returned no candidates."
+                    break
+
+                text = (
+                    candidates[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+                    .strip()
+                )
+
+                if not text:
+                    last_error = "Gemini returned an empty response."
+                    break
+
+                # Remove markdown JSON fences if Gemini returns them
+                if text.startswith("```"):
+                    text = text.replace("```json", "", 1)
+                    text = text.replace("```", "")
+                    text = text.strip()
+
+                # Convert Gemini response to JSON
+                try:
+                    analysis = json.loads(text)
+                except json.JSONDecodeError:
+                    last_error = "Gemini returned invalid JSON."
+                    break
+
+                # Success
+                break
+
+            except requests.RequestException as e:
+                last_error = f"Gemini request failed: {str(e)}"
+
+                if attempt < 2:
+                    time.sleep(3)
+                    continue
+
+                break
+
+            except Exception as e:
+                last_error = f"Unexpected error: {str(e)}"
+                break
+
+        # Stop once Gemini succeeds
+        if analysis is not None:
             break
 
-        except requests.RequestException as exc:
-            last_error = f"Gemini request failed: {str(exc)}"
-            continue
-
-        except Exception as exc:
-            last_error = f"Unexpected Gemini error: {str(exc)}"
-            continue
-
-    # Gemini failed on all available models.
+    # Gemini failed
     if analysis is None:
         session.add(Notification(
             user_id=user.id,
@@ -628,6 +645,7 @@ A human must verify all extracted medication details."""
             "analysis": None,
         }
 
+    # Gemini succeeded
     session.add(Notification(
         user_id=user.id,
         title="Prescription analysis complete",
