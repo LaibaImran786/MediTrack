@@ -525,32 +525,58 @@ This is an extraction aid, not medical advice. A human must verify all extracted
       if fallback_model not in models_to_try:
         models_to_try.append(fallback_model)
 
-    last_error = None
+        last_error = None
+    analysis = None
+
     for model in models_to_try:
         response = None
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
         try:
             response = requests.post(
                 endpoint,
-                headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+                headers={
+                    "x-goog-api-key": GEMINI_API_KEY,
+                    "Content-Type": "application/json",
+                },
                 json=payload,
                 timeout=90,
             )
+
             if response.status_code == 503:
-                last_error = "Gemini temporarily unavailable (503)."
+                last_error = f"Gemini temporarily unavailable (503) for model {model}."
                 continue
+
             response.raise_for_status()
+
             data = response.json()
+
             text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            cleaned = text.replace("```json", "").replace("```", "").strip()
+
+            cleaned = (
+                text
+                .replace("```json", "")
+                .replace("```", "")
+                .strip()
+            )
+
             analysis = json.loads(cleaned)
+
+            # Gemini succeeded
             break
-        except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            last_error = str(exc)
-            # A bad model name should not be hidden by repeatedly trying it.
-            if response is not None and response.status_code not in (429, 500, 502, 503, 504):
-                break
-    else:
+
+        except (
+            requests.RequestException,
+            KeyError,
+            IndexError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as exc:
+            last_error = f"{model}: {exc}"
+            continue
+
+    # Gemini failed with every model
+    if analysis is None:
         raise HTTPException(
             status_code=502,
             detail=f"Gemini analysis failed after model fallback: {last_error or 'Unknown Gemini error.'}",
@@ -562,6 +588,7 @@ This is an extraction aid, not medical advice. A human must verify all extracted
         body="Gemini finished extracting medication information. Please verify it before saving.",
         kind="ai",
     ))
+
     session.commit()
 
     return {
