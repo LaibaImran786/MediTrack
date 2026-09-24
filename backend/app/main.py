@@ -466,11 +466,18 @@ async def prescription_upload(
     session: Session = Depends(db),
 ):
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Please upload a prescription image (JPG, PNG, WEBP, etc.).")
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a prescription image (JPG, PNG, WEBP, etc.)."
+        )
 
     raw = await file.read()
+
     if len(raw) > 8 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Image is too large. Please use an image under 8 MB.")
+        raise HTTPException(
+            status_code=413,
+            detail="Image is too large. Please use an image under 8 MB."
+        )
 
     if not GEMINI_API_KEY:
         session.add(Notification(
@@ -480,15 +487,18 @@ async def prescription_upload(
             kind="prescription",
         ))
         session.commit()
+
         return {
             "ok": True,
             "message": "Prescription uploaded successfully.",
-            "ai_status": "Gemini is not configured. Add GEMINI_API_KEY to backend/.env.",
+            "ai_status": "Gemini is not configured.",
             "analysis": None,
         }
 
     prompt = """Analyze this prescription image for data entry assistance.
-Return ONLY valid JSON with this shape:
+
+Return ONLY valid JSON with this exact shape:
+
 {
   "medications": [
     {
@@ -501,29 +511,124 @@ Return ONLY valid JSON with this shape:
   ],
   "notes": ""
 }
-Do not invent missing information. If something is unreadable, leave it empty.
-This is an extraction aid, not medical advice. A human must verify all extracted medication details."""
+
+Do not invent missing information.
+If something is unreadable, leave it empty.
+
+This is an extraction aid, not medical advice.
+A human must verify all extracted medication details."""
 
     payload = {
         "contents": [{
             "parts": [
                 {"text": prompt},
-                {"inline_data": {
-                    "mime_type": file.content_type,
-                    "data": base64.b64encode(raw).decode("ascii"),
-                }},
+                {
+                    "inline_data": {
+                        "mime_type": file.content_type,
+                        "data": base64.b64encode(raw).decode("ascii"),
+                    }
+                },
             ]
-        }]
+        }],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json",
+        },
     }
 
-    # Try the configured model first, then fall back to other Flash models.
+    # Try the configured model first, then fallback models.
     models_to_try = [GEMINI_MODEL]
-    for fallback_model in ["gemini-3.6-flash"]:
+
+    for fallback_model in [
+        "gemini-3.6-flash",
+        "gemini-2.5-flash",
+    ]:
         if fallback_model not in models_to_try:
             models_to_try.append(fallback_model)
 
-     
-   
+    analysis = None
+    last_error = None
+
+    for model in models_to_try:
+        url = (
+            f"https://generativelanguage.googleapis.com/"
+            f"v1beta/models/{model}:generateContent"
+            f"?key={GEMINI_API_KEY}"
+        )
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=60,
+            )
+
+            if response.status_code != 200:
+                last_error = (
+                    f"Gemini returned HTTP {response.status_code}: "
+                    f"{response.text[:500]}"
+                )
+                continue
+
+            result = response.json()
+
+            candidates = result.get("candidates", [])
+
+            if not candidates:
+                last_error = "Gemini returned no candidates."
+                continue
+
+            text = (
+                candidates[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+                .strip()
+            )
+
+            if not text:
+                last_error = "Gemini returned an empty response."
+                continue
+
+            # Remove markdown JSON fences if Gemini returns them.
+            if text.startswith("```"):
+                text = text.replace("```json", "", 1)
+                text = text.replace("```", "")
+                text = text.strip()
+
+            try:
+                analysis = json.loads(text)
+            except json.JSONDecodeError:
+                last_error = "Gemini returned invalid JSON."
+                continue
+
+            break
+
+        except requests.RequestException as exc:
+            last_error = f"Gemini request failed: {str(exc)}"
+            continue
+
+        except Exception as exc:
+            last_error = f"Unexpected Gemini error: {str(exc)}"
+            continue
+
+    # Gemini failed on all available models.
+    if analysis is None:
+        session.add(Notification(
+            user_id=user.id,
+            title="Prescription analysis failed",
+            body="The prescription was uploaded, but Gemini could not analyze it. Please try again.",
+            kind="prescription",
+        ))
+        session.commit()
+
+        return {
+            "ok": False,
+            "message": "Prescription uploaded, but Gemini analysis failed.",
+            "ai_status": last_error or "Unknown Gemini error.",
+            "analysis": None,
+        }
+
     session.add(Notification(
         user_id=user.id,
         title="Prescription analysis complete",
