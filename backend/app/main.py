@@ -1,3 +1,4 @@
+import time
 import base64
 import datetime as dt
 import json
@@ -25,7 +26,7 @@ if DATABASE_URL.startswith("postgres://"):
     # Some hosts give postgres:// URLs, which SQLAlchemy does not accept.
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 CORS_ORIGINS = [
     o.strip()
     for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
@@ -521,39 +522,8 @@ This is an extraction aid, not medical advice. A human must verify all extracted
         if fallback_model not in models_to_try:
             models_to_try.append(fallback_model)
 
-    last_error = None
-    analysis = None
-    for model in models_to_try:
-        response = None
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        try:
-            response = requests.post(
-                endpoint,
-                headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-                json=payload,
-                timeout=90,
-            )
-            response.raise_for_status()
-            data = response.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            cleaned = text.replace("```json", "").replace("```", "").strip()
-            analysis = json.loads(cleaned)
-            break
-        except Exception as exc:
-            last_error = f"{model}: {exc}"
-            if response is not None:
-                last_error += f" | {response.text[:300]}"
-            # Keep trying other models for temporary or model-not-found errors.
-            # Stop on 400/401/403 (bad key or bad request): another model won't help.
-            if response is not None and response.status_code not in (404, 429, 500, 502, 503, 504):
-                break
-
-    if analysis is None:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Gemini analysis failed: {last_error or 'Unknown Gemini error.'}",
-        )
-
+     
+   
     session.add(Notification(
         user_id=user.id,
         title="Prescription analysis complete",
