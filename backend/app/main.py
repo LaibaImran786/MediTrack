@@ -541,7 +541,6 @@ A human must verify all extracted medication details."""
 
     for fallback_model in [
         "gemini-3.6-flash",
-        "gemini-2.5-flash",
     ]:
         if fallback_model not in models_to_try:
             models_to_try.append(fallback_model)
