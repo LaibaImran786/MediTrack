@@ -1,5 +1,5 @@
-// const API = import.meta.env.VITE_API_URL || 'https://meditrack-hdfm.onrender.com'
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || 'https://meditrack-hdfm.onrender.com'
+// const API = import.meta.env.VITE_API_URL
 async function request(path, options = {}) {
   const token = localStorage.getItem('token')
   const headers = {
